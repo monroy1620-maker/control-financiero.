@@ -1,218 +1,252 @@
 import React, { useState, useEffect } from 'react';
-import { PlusCircle, Trash2, DollarSign, TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
+import { 
+  Wallet, ArrowUpCircle, ArrowDownCircle, PlusCircle, 
+  Trash2, RefreshCw, BarChart2, ListOrdered, Download, FileSpreadsheet, DollarSign, TrendingUp, TrendingDown 
+} from 'lucide-react';
 
-const API_URL = "https://sheetdb.io/api/v1/im5ya1q8nsojg";
-
-export default function FinanceApp() {
+export default function App() {
   const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  
-  const [context, setContext] = useState('Negocio'); // Negocio o Personal
-  const [type, setType] = useState('Ingreso'); // Ingreso o Gasto
-  const [category, setCategory] = useState('');
+  const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [type, setType] = useState('ingreso');
+  const [category, setCategory] = useState('General');
+  const [activeTab, setActiveTab] = useState('movimientos'); // 'movimientos' o 'analisis'
+  const [syncStatus, setSyncStatus] = useState('Sincronizado');
 
-  // Cargar datos desde Google Sheets al abrir la app
-  const fetchTransactions = async () => {
-    setSyncing(true);
-    try {
-      const response = await fetch(API_URL);
-      const data = await response.json();
-      if (Array.isArray(data)) {
-        // Aseguramos que los montos sean números
-        const formatted = data.map(item => ({
-          ...item,
-          amount: Number(item.amount) || 0
-        }));
-        setTransactions(formatted);
-      }
-    } catch (error) {
-      console.error("Error al cargar datos:", error);
-    } finally {
-      setLoading(false);
-      setSyncing(false);
-    }
-  };
-
+  // Cargar datos al iniciar
   useEffect(() => {
-    fetchTransactions();
+    const saved = localStorage.getItem('control_financiero_txs');
+    if (saved) {
+      setTransactions(JSON.parse(saved));
+    }
   }, []);
 
-  // Agregar una transacción nueva y sincronizarla en la nube
-  const addTransaction = async (e) => {
+  const handleAddTransaction = (e) => {
     e.preventDefault();
-    if (!category || !amount) return;
+    if (!description || !amount) return;
 
     const newTx = {
       id: Date.now().toString(),
-      context,
-      type,
-      category,
-      amount: Number(amount),
-      date
+      fecha: new Date().toLocaleDateString(),
+      descripcion: description,
+      monto: parseFloat(amount),
+      tipo: type,
+      categoria: category
     };
 
-    setSyncing(true);
-    try {
-      // Guardar en SheetDB (Google Sheets)
-      await fetch(API_URL, {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ data: [newTx] })
-      });
+    const updated = [newTx, ...transactions];
+    setTransactions(updated);
+    localStorage.setItem('control_financiero_txs', JSON.stringify(updated));
 
-      // Actualizar pantalla localmente
-      setTransactions([newTx, ...transactions]);
-      setCategory('');
-      setAmount('');
-    } catch (error) {
-      console.error("Error al guardar:", error);
-      alert("Hubo un error al guardar en la nube. Revisa tu conexión.");
-    } finally {
-      setSyncing(false);
-    }
+    setDescription('');
+    setAmount('');
+    setSyncStatus('Actualizado');
   };
 
-  // Eliminar transacción
-  const deleteTransaction = async (id) => {
-    if (!window.confirm("¿Seguro que deseas eliminar este registro?")) return;
-
-    setSyncing(true);
-    try {
-      await fetch(`${API_URL}/id/${id}`, {
-        method: 'DELETE'
-      });
-      setTransactions(transactions.filter(t => t.id !== id));
-    } catch (error) {
-      console.error("Error al eliminar:", error);
-      alert("No se pudo eliminar el registro.");
-    } finally {
-      setSyncing(false);
-    }
+  const handleDelete = (id) => {
+    const updated = transactions.filter(t => t.id !== id);
+    setTransactions(updated);
+    localStorage.setItem('control_financiero_txs', JSON.stringify(updated));
   };
 
-  // Cálculos totales
-  const totalIngresos = transactions.filter(t => t.type === 'Ingreso').reduce((acc, t) => acc + t.amount, 0);
-  const totalGastos = transactions.filter(t => t.type === 'Gasto').reduce((acc, t) => acc + t.amount, 0);
-  const balanceNeto = totalIngresos - totalGastos;
+  // Función para exportar a CSV (Excel)
+  const exportToExcel = () => {
+    if (transactions.length === 0) return;
+    
+    let csvContent = "data:text/csv;charset=utf-8,ID,Fecha,Descripcion,Tipo,Categoria,Monto\n";
+    transactions.forEach(t => {
+      csvContent += `${t.id},${t.fecha},"${t.descripcion}",${t.tipo},${t.categoria},${t.monto}\n`;
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "control_financiero.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Calcular totales
+  const totalIngresos = transactions
+    .filter(t => t.tipo === 'ingreso')
+    .reduce((acc, t) => acc + Number(t.monto), 0);
+
+  const totalGastos = transactions
+    .filter(t => t.tipo === 'gasto')
+    .reduce((acc, t) => acc + Number(t.monto), 0);
+
+  const balance = totalIngresos - totalGastos;
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px', fontFamily: 'Arial, sans-serif' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h1 style={{ color: '#1E293B', margin: 0 }}>Control Financiero Sincronizado</h1>
-        <button 
-          onClick={fetchTransactions} 
-          disabled={syncing}
-          style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 12px', background: '#3B82F6', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
-        >
-          <RefreshCw size={16} className={syncing ? 'spin' : ''} />
-          {syncing ? 'Sincronizando...' : 'Actualizar'}
-        </button>
-      </header>
+    <div style={{ minHeight: '100vh', backgroundColor: '#f8fafc', padding: '24px', fontFamily: 'sans-serif' }}>
+      <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+        
+        {/* Encabezado Principal */}
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h1 style={{ fontSize: '26px', fontWeight: 'bold', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Wallet color="#2563eb" size={32} /> Control Financiero
+          </h1>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <button 
+              onClick={exportToExcel}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: '500' }}
+            >
+              <FileSpreadsheet size={16} /> Exportar Excel
+            </button>
+            <span style={{ fontSize: '13px', backgroundColor: '#e2e8f0', padding: '6px 12px', borderRadius: '20px', color: '#475569' }}>
+              {syncStatus}
+            </span>
+          </div>
+        </header>
 
-      {/* Tarjetas de Resumen */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '30px' }}>
-        <div style={{ background: '#F8FAFC', padding: '15px', borderRadius: '8px', borderLeft: '4px solid #10B981' }}>
-          <p style={{ margin: 0, color: '#64748B', fontSize: '14px' }}>Ingresos Totales</p>
-          <h2 style={{ margin: '5px 0 0 0', color: '#059669' }}>${totalIngresos.toLocaleString()}</h2>
+        {/* Pestañas de Navegación */}
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>
+          <button 
+            onClick={() => setActiveTab('movimientos')}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'movimientos' ? '#2563eb' : 'transparent', color: activeTab === 'movimientos' ? '#fff' : '#64748b', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            <ListOrdered size={18} /> Movimientos
+          </button>
+          <button 
+            onClick={() => setActiveTab('analisis')}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '8px', border: 'none', backgroundColor: activeTab === 'analisis' ? '#2563eb' : 'transparent', color: activeTab === 'analisis' ? '#fff' : '#64748b', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            <BarChart2 size={18} /> Resumen y Análisis
+          </button>
         </div>
-        <div style={{ background: '#F8FAFC', padding: '15px', borderRadius: '8px', borderLeft: '4px solid #EF4444' }}>
-          <p style={{ margin: 0, color: '#64748B', fontSize: '14px' }}>Gastos Totales</p>
-          <h2 style={{ margin: '5px 0 0 0', color: '#DC2626' }}>${totalGastos.toLocaleString()}</h2>
+
+        {/* Tarjetas de Resumen */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+          <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+            <p style={{ color: '#64748b', fontSize: '14px', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <DollarSign size={16} /> Balance Total
+            </p>
+            <h2 style={{ fontSize: '30px', color: balance >= 0 ? '#16a34a' : '#dc2626', margin: 0 }}>
+              ${balance.toFixed(2)}
+            </h2>
+          </div>
+          <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+            <p style={{ color: '#64748b', fontSize: '14px', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <TrendingUp size={16} color="#16a34a" /> Ingresos
+            </p>
+            <h2 style={{ fontSize: '26px', color: '#16a34a', margin: 0 }}>${totalIngresos.toFixed(2)}</h2>
+          </div>
+          <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+            <p style={{ color: '#64748b', fontSize: '14px', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <TrendingDown size={16} color="#dc2626" /> Gastos
+            </p>
+            <h2 style={{ fontSize: '26px', color: '#dc2626', margin: 0 }}>${totalGastos.toFixed(2)}</h2>
+          </div>
         </div>
-        <div style={{ background: '#F8FAFC', padding: '15px', borderRadius: '8px', borderLeft: '4px solid #3B82F6' }}>
-          <p style={{ margin: 0, color: '#64748B', fontSize: '14px' }}>Balance Neto</p>
-          <h2 style={{ margin: '5px 0 0 0', color: balanceNeto >= 0 ? '#2563EB' : '#DC2626' }}>${balanceNeto.toLocaleString()}</h2>
-        </div>
+
+        {/* Contenido según la pestaña activa */}
+        {activeTab === 'movimientos' ? (
+          <>
+            {/* Formulario para agregar */}
+            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', marginBottom: '24px' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <PlusCircle size={20} color="#2563eb" /> Nueva Transacción
+              </h3>
+              <form onSubmit={handleAddTransaction} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 120px', gap: '12px' }}>
+                <input 
+                  type="text" 
+                  placeholder="Descripción (ej. Venta de herramienta)" 
+                  value={description} 
+                  onChange={(e) => setDescription(e.target.value)}
+                  required
+                  style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                />
+                <input 
+                  type="number" 
+                  placeholder="Monto ($)" 
+                  value={amount} 
+                  onChange={(e) => setAmount(e.target.value)}
+                  required
+                  style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                />
+                <select 
+                  value={type} 
+                  onChange={(e) => setType(e.target.value)}
+                  style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+                >
+                  <option value="ingreso">Ingreso</option>
+                  <option value="gasto">Gasto</option>
+                </select>
+                <button 
+                  type="submit" 
+                  style={{ backgroundColor: '#2563eb', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', padding: '10px' }}
+                >
+                  Agregar
+                </button>
+              </form>
+            </div>
+
+            {/* Historial de transacciones */}
+            <div style={{ backgroundColor: '#ffffff', padding: '20px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', color: '#1e293b' }}>Historial de Movimientos</h3>
+              {transactions.length === 0 ? (
+                <p style={{ color: '#94a3b8', textAlign: 'center', padding: '30px' }}>No hay transacciones registradas todavía.</p>
+              ) : (
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {transactions.map((t) => (
+                    <li key={t.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f1f5f9' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {t.tipo === 'ingreso' ? <ArrowUpCircle color="#16a34a" size={24} /> : <ArrowDownCircle color="#dc2626" size={24} />}
+                        <div>
+                          <span style={{ fontWeight: '500', color: '#334155', display: 'block' }}>{t.descripcion}</span>
+                          <span style={{ fontSize: '12px', color: '#94a3b8' }}>{t.fecha}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <span style={{ fontWeight: 'bold', fontSize: '16px', color: t.tipo === 'ingreso' ? '#16a34a' : '#dc2626' }}>
+                          {t.tipo === 'ingreso' ? '+' : '-'}${Number(t.monto).toFixed(2)}
+                        </span>
+                        <button 
+                          onClick={() => handleDelete(t.id)}
+                          style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </>
+        ) : (
+          /* Vista de Análisis / Gráficas */
+          <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '12px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
+            <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', color: '#1e293b' }}>Análisis de Rendimiento Financiero</h3>
+            <p style={{ color: '#64748b', marginBottom: '20px' }}>Resumen estadístico de tus entradas y salidas de efectivo:</p>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+              <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', borderLeft: '4px solid #16a34a' }}>
+                <h4 style={{ margin: '0 0 8px 0', color: '#16a34a' }}>Total Ingresos</h4>
+                <p style={{ fontSize: '22px', fontWeight: 'bold', margin: 0 }}>${totalIngresos.toFixed(2)}</p>
+              </div>
+              <div style={{ padding: '16px', backgroundColor: '#f8fafc', borderRadius: '8px', borderLeft: '4px solid #dc2626' }}>
+                <h4 style={{ margin: '0 0 8px 0', color: '#dc2626' }}>Total Gastos</h4>
+                <p style={{ fontSize: '22px', fontWeight: 'bold', margin: 0 }}>${totalGastos.toFixed(2)}</p>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '24px', padding: '16px', backgroundColor: '#f1f5f9', borderRadius: '8px' }}>
+              <h4 style={{ margin: '0 0 8px 0', color: '#334155' }}>Estado de Salud Financiera</h4>
+              <p style={{ color: '#475569', margin: 0 }}>
+                {balance >= 0 
+                  ? '¡Excelente! Tus ingresos son superiores a tus gastos actuales.' 
+                  : 'Atención: Tus gastos están superando los ingresos registrados.'}
+              </p>
+            </div>
+          </div>
+        )}
+
       </div>
-
-      {/* Formulario para Agregar */}
-      <form onSubmit={addTransaction} style={{ background: '#FFFFFF', padding: '20px', borderRadius: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', marginBottom: '30px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', alignItems: 'end' }}>
-        <div>
-          <label style={{ display: 'block', fontSize: '12px', marginBottom: '5px', color: '#64748B' }}>Contexto</label>
-          <select value={context} onChange={e => setContext(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #CBD5E1' }}>
-            <option value="Negocio">Negocio</option>
-            <option value="Personal">Personal</option>
-          </select>
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: '12px', marginBottom: '5px', color: '#64748B' }}>Tipo</label>
-          <select value={type} onChange={e => setType(e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #CBD5E1' }}>
-            <option value="Ingreso">Ingreso</option>
-            <option value="Gasto">Gasto</option>
-          </select>
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: '12px', marginBottom: '5px', color: '#64748B' }}>Categoría / Concepto</label>
-          <input type="text" placeholder="Ej. Taladro, Comida..." value={category} onChange={e => setCategory(e.target.value)} required style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #CBD5E1', boxSizing: 'border-box' }} />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: '12px', marginBottom: '5px', color: '#64748B' }}>Monto ($)</label>
-          <input type="number" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} required style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #CBD5E1', boxSizing: 'border-box' }} />
-        </div>
-
-        <div>
-          <label style={{ display: 'block', fontSize: '12px', marginBottom: '5px', color: '#64748B' }}>Fecha</label>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} required style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #CBD5E1', boxSizing: 'border-box' }} />
-        </div>
-
-        <button type="submit" disabled={syncing} style={{ background: '#10B981', color: 'white', border: 'none', padding: '9px 15px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-          Agregar
-        </button>
-      </form>
-
-      {/* Lista de Movimientos */}
-      <h3 style={{ color: '#1E293B', borderBottom: '2px solid #E2E8F0', paddingBottom: '8px' }}>Historial de Movimientos</h3>
-      {loading ? (
-        <p style={{ textAlign: 'center', color: '#64748B' }}>Cargando datos desde la nube...</p>
-      ) : transactions.length === 0 ? (
-        <p style={{ textAlign: 'center', color: '#64748B' }}>No hay registros todavía. ¡Agrega el primero!</p>
-      ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', background: 'white', borderRadius: '8px', overflow: 'hidden' }}>
-            <thead>
-              <tr style={{ background: '#F1F5F9', textAlign: 'left', color: '#475569', fontSize: '14px' }}>
-                <th style={{ padding: '12px' }}>Fecha</th>
-                <th style={{ padding: '12px' }}>Contexto</th>
-                <th style={{ padding: '12px' }}>Tipo</th>
-                <th style={{ padding: '12px' }}>Concepto</th>
-                <th style={{ padding: '12px' }}>Monto</th>
-                <th style={{ padding: '12px', textAlign: 'center' }}>Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.map(t => (
-                <tr key={t.id} style={{ borderBottom: '1px solid #F1F5F9', fontSize: '14px' }}>
-                  <td style={{ padding: '12px', color: '#334155' }}>{t.date}</td>
-                  <td style={{ padding: '12px', color: '#334155' }}>{t.context}</td>
-                  <td style={{ padding: '12px' }}>
-                    <span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold', background: t.type === 'Ingreso' ? '#D1FAE5' : '#FEE2E2', color: t.type === 'Ingreso' ? '#065F46' : '#991B1B' }}>
-                      {t.type}
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px', color: '#334155' }}>{t.category}</td>
-                  <td style={{ padding: '12px', fontWeight: 'bold', color: t.type === 'Ingreso' ? '#059669' : '#DC2626' }}>
-                    ${Number(t.amount).toLocaleString()}
-                  </td>
-                  <td style={{ padding: '12px', textAlign: 'center' }}>
-                    <button onClick={() => deleteTransaction(t.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444' }} title="Eliminar">
-                      <Trash2 size={18} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+    </div>
+  );
+}
     </div>
   );
 }
