@@ -1,1 +1,1 @@
-# control-financiero.
+# control-financiero
